@@ -28,6 +28,20 @@ test('dynamic UI grammar preserves amounts, currency, names and provider details
  for(const[from,to]of cases)assert.equal(translateWhaleUiText(from,dictionary,speech),to,from);
  for(const text of ['我的文字','Меню','gpt-6.1-sol','$ 0.00','123.45','Произвольный текст 今日','https://example.com/余额'])assert.equal(translateWhaleUiText(text,dictionary,speech),text);
 });
+test('frame composition translates wrappers recursively, never opaque captured names',()=>{
+ const cases=[
+  ['泡泡框：跟随保底（经典（内置））','Рамка: По умолчанию (классическая рамка)'],
+  ['泡泡框：跟随保底（跟随保底（经典（内置）））','Рамка: По умолчанию (По умолчанию (классическая рамка))'],
+  ['泡泡框：跟随保底（跟随保底）','Рамка: По умолчанию (跟随保底)'],
+  ['泡泡框：跟随保底（菜单）','Рамка: По умолчанию (菜单)'],
+  ['编辑泡泡框：今日已用','Изменить рамку: 今日已用'],
+  ['编辑 第1次点击内容(可拖动下方模块入框)','Нажатие 1 · изменить содержимое (перетащите модули в рамку)'],
+  ['编辑 第123次点击内容(可拖动下方模块入框)','Нажатие 123 · изменить содержимое (перетащите модули в рамку)'],
+  ['编辑 第2次点击 · A泡内容(可拖动下方模块入框)','Нажатие 2 · A · изменить содержимое (перетащите модули в рамку)'],
+  ['编辑 第2次点击 · B泡内容(可拖动下方模块入框)','Нажатие 2 · B · изменить содержимое (перетащите модули в рамку)'],
+ ];
+ for(const[from,to]of cases)assert.equal(translateWhaleUiText(from,dictionary,speech),to,from);
+});
 test('every shipped speech source has an exact translation; captured placeholders are kept',()=>{
  const keys=JSON.parse(fs.readFileSync(new URL('./fixtures/default-speech-keys.json',import.meta.url),'utf8'));
  for(const key of keys)if(/[\u3400-\u9fff]/.test(key))assert.equal(typeof speech[key.trim()],'string',key);

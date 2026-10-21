@@ -1,7 +1,17 @@
 /** Anchored UI templates. Captured names, amounts, URLs and diagnostic details remain verbatim. */
 export function translateWhaleUiText(value, dictionary, defaultContent = {}) {
   const text = value.trim();
+  // Recurse through UI wrappers only. A captured leaf is an opaque frame name,
+  // even when it is Chinese or happens to match a dictionary key.
+  function frameLabel(name) {
+    if (name === '经典（内置）') return 'классическая рамка';
+    const follow = /^跟随保底（([\s\S]+)）$/.exec(name);
+    return follow ? `По умолчанию (${frameLabel(follow[1])})` : name;
+  }
   let result = dictionary[text];
+  const frame = /^(泡泡框：|泡泡框（保底）：|编辑泡泡框：)([\s\S]+)$/.exec(text);
+  if (frame) result = ({'泡泡框：':'Рамка: ', '泡泡框（保底）：':'Основная рамка: ', '编辑泡泡框：':'Изменить рамку: '})[frame[1]] + frameLabel(frame[2]);
+  else if (/^跟随保底（[\s\S]+）$/.test(text)) result = frameLabel(text);
   if (result === undefined) {
     const rules = [
       [/^((?:[¥$€£₽]\s*)?[-\d,.\s]+(?:[A-Z]{3})?) · 今日 (.+)$/, (_, balance, today) => `${balance} · сегодня ${today}`],
@@ -16,9 +26,6 @@ export function translateWhaleUiText(value, dictionary, defaultContent = {}) {
       [/^余额 ≤ (.+) 时提醒$/, (_, amount) => `Уведомлять при балансе ≤ ${amount}`],
       [/^今日已用 ≥ (.+) 时提醒$/, (_, amount) => `Уведомлять при расходах за день ≥ ${amount}`],
       [/^当前自动统计：已用 (.+) · 今日 (.+) tokens$/, (_, used, today) => `Автоучёт: использовано ${used} · сегодня ${today} токенов`],
-      [/^跟随保底（(.+)）$/, (_, name) => `По умолчанию (${name === '经典（内置）' ? 'классическая рамка' : name})`],
-      [/^泡泡框：(.+)$/, (_, name) => `Рамка: ${name === '经典（内置）' ? 'классическая' : name}`],
-      [/^泡泡框（保底）：(.+)$/, (_, name) => `Основная рамка: ${name === '经典（内置）' ? 'классическая' : name}`],
       [/^(.+?)（内置，只读）$/, (_, name) => `${name} (встроенный, только чтение)`],
       [/^(.+?)（内置）$/, (_, name) => `${name} (встроенный)`],
       [/^编辑泡泡框：(.+)$/, (_, name) => `Изменить рамку: ${name}`],
@@ -58,6 +65,7 @@ export function translateWhaleUiText(value, dictionary, defaultContent = {}) {
       [/^角色 (\d+) · 泡泡图 (\d+)$/, (_, roles, images) => `Персонажи: ${roles} · изображения: ${images}`],
       [/^音效组 (\d+) · 片段 (\d+)$/, (_, groups, clips) => `Наборы звуков: ${groups} · фрагменты: ${clips}`],
       [/^按压:(.*) 松开:(.*)$/, (_, down, up) => `Нажатие: ${down} · отпускание: ${up}`],
+      [/^编辑 第(\d+)次点击(?: · ([AB])泡)?内容\(可拖动下方模块入框\)$/, (_, count, side) => `Нажатие ${count}${side ? ` · ${side}` : ''} · изменить содержимое (перетащите модули в рамку)`],
       [/^第(\d+)次点击 · 编辑内容$/, (_, count) => `Нажатие ${count} · изменить содержимое`],
       [/^([AB]) 泡\(权重 (\d+)\)$/, (_, option, weight) => `Облачко ${option} (вес ${weight})`],
       [/^从模块库删除「([\s\S]*)」\?$/, (_, name) => `Удалить из библиотеки модуль «${name}»?`],

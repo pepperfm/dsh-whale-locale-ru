@@ -119,3 +119,6 @@ try {
  if(failures.length)throw new Error('UI audit failed: '+failures.map(item=>item.name).join(', '));
  console.log(JSON.stringify(report.map(r=>({name:r.name,untranslated:r.chinese?.length,clipped:r.clipped?.length,errors:r.errors})),null,2));
 }catch(error){fs.writeFileSync(root+'/test-results/ui-sweep-partial.json',JSON.stringify(report,null,2));throw error;}finally{await browser.close()}
+// The content editor is a separate surface, not the sequence or frame editor.
+// Exercise the actual widget with the shipped compiled locale bundle as well.
+await import('./preview.mjs');

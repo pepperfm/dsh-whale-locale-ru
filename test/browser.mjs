@@ -77,6 +77,13 @@ try {
   await page.waitForFunction(() => document.querySelector('#speech-row').textContent.startsWith('Работа научила'));
   await page.waitForFunction(() => document.querySelector('#speech-row').getBoundingClientRect().height <= 80);
   assert.ok(await page.evaluate(() => document.querySelector('#speech-row').scrollWidth <= document.querySelector('#speech-card').clientWidth + 1));
+  await page.evaluate(() => {
+    const box=document.createElement('div');box.className='dshwv-bubprev';
+    box.innerHTML='<div class="dshwv-text" style="width:180px;height:80px"><div class="dshwv-trow" id="unstyled-speech">上班让我意识到时间是可以被浪费的...</div></div>';
+    document.body.append(box);window.detachedSpeech=box;
+  });
+  await page.waitForFunction(()=>document.querySelector('#unstyled-speech').style.whiteSpace==='normal');
+  await page.evaluate(()=>detachedSpeech.remove());
   await page.evaluate(() => { document.querySelector('#peak-label').textContent = '谷'; });
   await page.waitForFunction(() => document.querySelector('#peak-label').textContent === 'Льг.');
   await page.evaluate(() => localeMock.setLocale('en'));
@@ -84,6 +91,8 @@ try {
   assert.equal(await page.locator('#balance-card').textContent(), 'DeepSeek 余额0.00 USD今日已用 0.00 USD谷00:58:54');
   assert.equal(await page.locator('#speech-row').textContent(), '上班让我意识到时间是可以被浪费的...');
   assert.equal(await page.locator('#speech-row').evaluate(el => el.style.fontSize), '32px');
+  assert.equal(await page.evaluate(()=>detachedSpeech.querySelector('.dshwv-trow').getAttribute('style')),null);
+  assert.equal(await page.evaluate(()=>detachedSpeech.querySelector('.dshwv-trow').textContent),'上班让我意识到时间是可以被浪费的...');
   await page.evaluate(() => localeMock.setLocale('ru'));
   await page.waitForFunction(() => document.querySelector('#builtin-role').textContent === 'Китёнок');
   await page.evaluate(() => disposeWhaleRu());

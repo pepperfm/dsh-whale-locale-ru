@@ -12,6 +12,15 @@ export function installWhaleTranslation(locale, dictionary, doc = document, defa
   let disposed = false;
   let warned = false;
   let observer;
+  const surfaces = new Set();
+  const whaleSelector = '[class^="dshwv-"], [class*=" dshwv-"]';
+  function registerSurface(node) {
+    if (node.nodeType !== 1) return;
+    if (node.matches(whaleSelector)) surfaces.add(node);
+    else for (const element of node.querySelectorAll(whaleSelector)) if (!element.parentElement?.closest(whaleSelector)) surfaces.add(element);
+  }
+  // Discover existing portals once; mutations register only their added subtree.
+  if (doc.body) registerSurface(doc.body);
 
   function translate(value) {
     const trimmed = value.trim();
@@ -44,12 +53,17 @@ export function installWhaleTranslation(locale, dictionary, doc = document, defa
       if (original.value) row.style.setProperty(property, original.value, original.priority);
       else row.style.removeProperty(property);
     }
+    if (!record.hadStyle && !row.getAttribute('style')?.trim()) {
+      row.removeAttribute('style');
+    }
   }
   function restore() {
     if (fitFrame !== null) doc.defaultView?.cancelAnimationFrame(fitFrame);
     fitFrame = null;
     for (const [row, record] of speechStyles) restoreSpeechStyle(row, record);
     speechStyles.clear();
+    for (const card of fitCards) { unobserveFit(card); fitKeys.delete(card); }
+    fitCards.clear();
     for (const [node, record] of texts) if (node.nodeValue === record.translated) node.nodeValue = record.original;
     for (const [element, records] of attrs) for (const [attribute, record] of records) {
       if (element.getAttribute(attribute) === record.translated) element.setAttribute(attribute, record.original);
@@ -112,17 +126,23 @@ export function installWhaleTranslation(locale, dictionary, doc = document, defa
   }
   function translateBuiltins() {
     const amount = /^(?:[¥$€£₽]\s*)?[\d\s,.]+(?:\s*[A-Z]{3})?$/;
-    for (const card of doc.querySelectorAll('.dshwv-pop .dshwv-text')) {
+    for (const card of doc.querySelectorAll('.dshwv-pop .dshwv-text, .dshwv-bubprev .dshwv-text, .dshwv-bubpvbox .dshwv-text')) {
       const leaves = textLeaves(card);
       if (leaves.length < 3) continue;
       const title = leaves[0].nodeValue.trim();
-      const usage = leaves[2].nodeValue.trim();
-      const usageMatch = /^(今日已用|Сегодня)(\s+.+)$/.exec(usage);
-      if (!['DeepSeek 余额', 'Баланс DeepSeek'].includes(title)
-        || !amount.test(leaves[1].nodeValue.trim()) || !usageMatch || !amount.test(usageMatch[2].trim())) continue;
-      if (title === 'DeepSeek 余额') putText(leaves[0], leaves[0].nodeValue.replace(title, 'Баланс DeepSeek'));
-      if (usageMatch[1] === '今日已用') putText(leaves[2], leaves[2].nodeValue.replace('今日已用', 'Сегодня'));
-      for (const node of leaves.slice(3)) {
+      const hasTitle = ['DeepSeek 余额', 'Баланс DeepSeek'].includes(title);
+      const amountIndex = hasTitle ? 1 : 0;
+      const usageNode = leaves[amountIndex + 1];
+      const usageMatch = /^(今日已用|Сегодня)(\s+.+)$/.exec(usageNode.nodeValue.trim());
+      const tail = leaves.slice(amountIndex + 2);
+      if (!amount.test(leaves[amountIndex].nodeValue.trim()) || !usageMatch || !amount.test(usageMatch[2].trim())) continue;
+      // The first-click editor may omit the heading. Require its complete
+      // balance/usage/period/countdown signature, not an arbitrary Chinese word.
+      if (!hasTitle && (!tail.some(node => /^\d{1,3}:\d{2}:\d{2}$/.test(node.nodeValue.trim()))
+        || !tail.some(node => ['峰','谷','Пик','Льг.','高峰时段','空闲时段','Пиковый тариф','Льготный тариф'].includes(node.nodeValue.trim())))) continue;
+      if (hasTitle && title === 'DeepSeek 余额') putText(leaves[0], leaves[0].nodeValue.replace(title, 'Баланс DeepSeek'));
+      if (usageMatch[1] === '今日已用') putText(usageNode, usageNode.nodeValue.replace('今日已用', 'Сегодня'));
+      for (const node of tail) {
         const text = node.nodeValue.trim();
         const label = { '峰': 'Пик', '谷': 'Льг.', '高峰时段': 'Пиковый тариф', '空闲时段': 'Льготный тариф' }[text];
         if (label) putText(node, node.nodeValue.replace(text, label));
@@ -242,6 +262,17 @@ export function installWhaleTranslation(locale, dictionary, doc = document, defa
       }
     }
   }
+  function numericUsageModule(label) {
+    const box = label.closest('.dshwv-bubpvbox');
+    const row = label.closest('.dshwv-pvrow');
+    if (!box || !row) return false;
+    const rowIndex = [...box.children].indexOf(row);
+    const modules = [...row.querySelectorAll('.dshwv-pvlab')];
+    const preview = box.parentElement.querySelector('.dshwv-bubprev .dshwv-text');
+    const rendered = preview?.children[rowIndex];
+    const module = modules.length === 1 ? rendered : rendered?.children[modules.indexOf(label)];
+    return !!module && /^今日已用 [-+]?\d[\d,.]*(?:\s*[A-Z]{3})?$/.test(sourceText(module).trim());
+  }
   function translateEditorChrome() {
     for (const frame of doc.querySelectorAll('.dshwv-fcard[data-fid="frame_classic"]')) {
       for (const label of frame.querySelectorAll('.dshwv-fcardname')) knownLabel(label, '经典（内置）', 'Классическая (встроенная)');
@@ -270,7 +301,10 @@ export function installWhaleTranslation(locale, dictionary, doc = document, defa
         const previous = texts.get(node);
         if (previous?.translated === node.nodeValue) continue;
         const value = node.nodeValue;
-        const generated = label.classList.contains('dshwv-pvlab')
+        const generated = label.classList.contains('dshwv-pvlab') && (
+          /^(文本: |超链接: |余额·|今日已用·|额度·|对话名\(|随机图片\()/.test(value)
+          || value === '今日已用' && numericUsageModule(label)
+          || ['总余额(充值金额+赠金)', '赠金', '充值余额', '随机语句', '图片/动图', '随机图片(空)', '简洁(峰/谷)', '时段倒计时', '峰谷时段'].includes(value))
           || label.classList.contains('dshwv-bubtitle') && /^(模型设置 · |额度 · |新增模型（自定义 API）$)|（内置）$/.test(value)
           || /^第\d+次点击 · 编辑内容$|^[AB] 泡\(权重 \d+\)$|^首次点击 · 编辑内容$|^[AB] · 编辑内容$/.test(value);
         if (!generated) continue;
@@ -279,55 +313,113 @@ export function installWhaleTranslation(locale, dictionary, doc = document, defa
       }
     }
   }
-  function translateDefaultSpeech() {
+  const fitCards = new Set();
+  const fitKeys = new WeakMap();
+  const fitTargets = new WeakMap();
+  function unobserveFit(card) {
+    const target = fitTargets.get(card);
+    if (target) resize?.unobserve(target);
+    fitTargets.delete(card);
+  }
+  const resize = doc.defaultView?.ResizeObserver ? new doc.defaultView.ResizeObserver(() => queueFit()) : null;
+  function safeSize(card) {
+    // Custom frames intentionally render their text layer with height:auto. The
+    // inline percentage still defines the safe rectangle; never feed fitted text
+    // height back into the fitter (or a ResizeObserver on the text layer).
+    const declared = card.style.height;
+    const height = card.classList.contains('dshwv-textsafe') && declared.endsWith('%')
+      ? card.parentElement.clientHeight * parseFloat(declared) / 100 : card.clientHeight;
+    return { width: card.clientWidth, height };
+  }
+  function queueFit() {
     const win = doc.defaultView;
-    const fitted = [];
-    for (const card of doc.querySelectorAll('.dshwv-pop .dshwv-text')) {
-      let known = false;
+    if (!enabled || disposed || fitFrame !== null || !win?.requestAnimationFrame) return;
+    fitFrame = win.requestAnimationFrame(() => {
+      fitFrame = null;
+      for (const card of fitCards) {
+        if (!card.isConnected) continue;
+        const safe = safeSize(card);
+        if (!safe.width || !safe.height) continue;
+        const key = safe.width + ':' + safe.height + ':' + card.textContent;
+        const rows = [...card.querySelectorAll('.dshwv-trow')];
+        const previous = fitKeys.get(card);
+        if (previous?.key === key && previous.rows.length === rows.length && rows.every((row, i) => previous.rows[i] === row)) continue;
+        fitKeys.set(card, { key, rows });
+        if (!rows.length) continue;
+        function set(row, property, value) {
+          let record = speechStyles.get(row);
+          if (!record) {
+            record = { original: new Map(), applied: new Map(), hadStyle: row.hasAttribute('style'), base: parseFloat(win.getComputedStyle(row).fontSize) || 16 };
+            speechStyles.set(row, record);
+          }
+          if (!record.original.has(property)) record.original.set(property, { value: row.style.getPropertyValue(property), priority: row.style.getPropertyPriority(property) });
+          row.style.setProperty(property, value, 'important'); record.applied.set(property, row.style.getPropertyValue(property));
+          return record;
+        }
+        // Keep the native canvas, safe rectangle and all pointer coordinates intact.
+        // Wrap individual rows, then fit the WHOLE group (including nested badges),
+        // rather than granting each row the entire available vertical space.
+        for (const row of rows) {
+          set(row, 'white-space', 'normal');
+          set(row, 'overflow-wrap', 'anywhere');
+          set(row, 'max-width', '100%');
+          const record = speechStyles.get(row);
+          set(row, 'font-size', record.base.toFixed(2) + 'px');
+        }
+        const topRows = [...card.children].filter(el => el.matches('.dshwv-trow'));
+        const availableHeight = safe.height * .96;
+        for (let pass = 0; pass < 18; pass++) {
+          const bounds = card.getBoundingClientRect();
+          const groupHeight = topRows.reduce((sum, row) => {
+            const cs = win.getComputedStyle(row);
+            return sum + row.getBoundingClientRect().height + parseFloat(cs.marginTop || 0) + parseFloat(cs.marginBottom || 0);
+          }, 0);
+          const wide = rows.some(row => row.scrollWidth > card.clientWidth + 1);
+          const escaped = rows.some(row => { const r = row.getBoundingClientRect(); return r.left < bounds.left - 1 || r.right > bounds.right + 1; });
+          if (groupHeight <= availableHeight && !wide && !escaped) break;
+          const factor = Math.min(.94, availableHeight / Math.max(1, groupHeight) * .98);
+          for (const row of rows) {
+            const size = parseFloat(win.getComputedStyle(row).fontSize);
+            set(row, 'font-size', Math.max(10, size * factor).toFixed(2) + 'px');
+          }
+        }
+      }
+    });
+  }
+  function translateDefaultSpeech() {
+    const next = new Set();
+    for (const card of doc.querySelectorAll('.dshwv-pop .dshwv-text, .dshwv-bubprev .dshwv-text, .dshwv-bubpvbox .dshwv-text')) {
+      let known = textLeaves(card).some(node => texts.has(node));
       for (const node of textLeaves(card)) {
         const record = texts.get(node);
         const original = record?.translated === node.nodeValue ? record.original : node.nodeValue;
         const phrase = original.trim();
-        if (!Object.hasOwn(defaultSpeech, phrase)) continue;
-        const translated = original.replace(phrase, defaultSpeech[phrase]);
-        if (node.nodeValue !== translated) putText(node, translated);
-        known = true;
-        fitted.push({ card, row: node.parentElement.closest('.dshwv-trow') || node.parentElement });
+        // Display-only exception: exact shipped speech is localized even if copied
+        // into a custom text module. Inputs and persisted module data stay verbatim.
+        let replacement = Object.hasOwn(defaultSpeech, phrase) ? defaultSpeech[phrase] : undefined;
+        // Numeric-only anchored generated usage, never the custom text "今日已用".
+        if (card.closest('.dshwv-bubprev,.dshwv-bubpvbox')) {
+          const usage = /^今日已用 ([-+]?\d[\d,.]*(?:\s*[A-Z]{3})?)$/.exec(phrase);
+          if (usage) replacement = 'Сегодня ' + usage[1];
+        }
+        if (replacement !== undefined) {
+          const translated = original.replace(phrase, replacement);
+          if (node.nodeValue !== translated) putText(node, translated);
+          known = true;
+        }
       }
-      if (!known) for (const [row, record] of speechStyles) if (card.contains(row)) {
-        restoreSpeechStyle(row, record); speechStyles.delete(row);
-      }
+      if (known) next.add(card);
     }
-    for (const [row, record] of speechStyles) if (!row.isConnected) { restoreSpeechStyle(row, record); speechStyles.delete(row); }
-    if (!fitted.length || !win?.requestAnimationFrame || fitFrame !== null) return;
-    fitFrame = win.requestAnimationFrame(() => {
-      fitFrame = null;
-      if (disposed || !enabled) return;
-      for (const { card, row } of fitted) {
-        if (!row.isConnected || !card.clientWidth || !card.clientHeight) continue;
-        let record = speechStyles.get(row);
-        if (!record) {
-          record = { original: new Map(), applied: new Map(), key: '', base: parseFloat(win.getComputedStyle(row).fontSize) || 16 };
-          for (const property of ['font-size', 'white-space', 'max-width']) record.original.set(property, { value: row.style.getPropertyValue(property), priority: row.style.getPropertyPriority(property) });
-          speechStyles.set(row, record);
-        }
-        const key = card.clientWidth + ':' + card.clientHeight + ':' + row.textContent;
-        if (record.key === key) continue;
-        record.key = key;
-        function set(property, value) { row.style.setProperty(property, value, 'important'); record.applied.set(property, value); }
-        set('white-space', 'normal'); set('max-width', '100%');
-        let size = record.base;
-        set('font-size', size.toFixed(2) + 'px');
-        for (let pass = 0; pass < 4; pass++) {
-          const availableWidth = card.clientWidth, availableHeight = card.clientHeight * .92;
-          const width = row.scrollWidth, height = row.getBoundingClientRect().height;
-          const ratio = Math.min(availableWidth / Math.max(1, width), availableHeight / Math.max(1, height));
-          if (ratio >= .99 || size <= 8) break;
-          size = Math.max(8, size * Math.min(.9, ratio * .95));
-          set('font-size', size.toFixed(2) + 'px');
-        }
-      }
-    });
+    for (const card of fitCards) if (!next.has(card)) { unobserveFit(card); fitCards.delete(card); }
+    for (const [row, record] of speechStyles) if (!row.isConnected || ![...next].some(card => card.contains(row))) {
+      restoreSpeechStyle(row, record); speechStyles.delete(row);
+    }
+    for (const card of next) if (!fitCards.has(card)) {
+      fitCards.add(card);
+      fitTargets.set(card, card.parentElement);
+      resize?.observe(card.parentElement);
+    }
+    queueFit();
   }
   function scan() {
     pending = false;
@@ -349,8 +441,8 @@ export function installWhaleTranslation(locale, dictionary, doc = document, defa
       translateSoundSettings();
       translateEditorChrome();
       // Only walk Whale-owned surfaces, never chat text, tool output, or the DSH editor.
-      const candidates = doc.querySelectorAll('[class^="dshwv-"], [class*=" dshwv-"]');
-      const roots = [...candidates].filter(el => !owned(el.parentElement));
+      for (const element of surfaces) if (!element.isConnected) surfaces.delete(element);
+      const roots = [...surfaces].filter(el => !owned(el.parentElement));
       for (const root of roots) {
         translateAttributes(root);
         const walker = doc.createTreeWalker(root, 1 | 4, {
@@ -372,7 +464,9 @@ export function installWhaleTranslation(locale, dictionary, doc = document, defa
     }
   }
   function schedule(records) {
-    if (disposed || pending) return;
+    if (disposed) return;
+    if (records) for (const record of records) for (const node of record.addedNodes) registerSurface(node);
+    if (pending) return;
     // Don't rescan the widget for every streamed chat token.
     if (records && !records.some(record => {
       const target = record.target.nodeType === 1 ? record.target : record.target.parentElement;
@@ -392,6 +486,7 @@ export function installWhaleTranslation(locale, dictionary, doc = document, defa
   schedule();
   return () => {
     disposed = true;
+    resize?.disconnect();
     observer.disconnect();
     doc.removeEventListener('click', trackSoundMenu, true);
     activeSoundSelect = null;

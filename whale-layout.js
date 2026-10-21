@@ -100,6 +100,9 @@ ${scope} :is(.dshwv-audiowin,.dshwv-cropwin,.dshwv-gifwin,.dshwv-confirmwin,
 ${scope} .dshwv-audiowin { width:30rem; }
 ${scope} .dshwv-confirmwin { width:24rem; }
 ${scope} .dshwv-bubcard { width:min(38rem,calc(100vw - 1rem)) !important; }
+/* Native preview caches pixel margins at creation; recenter its unchanged canvas
+   when the card reflows. Do not scale the stage or its pointer coordinates. */
+${scope} .dshwv-bubprev { margin-left:auto !important; margin-right:auto !important; }
 ${scope} .dshwv-bubcard > .dshwv-menu-row:has(+ [data-open]) > span:nth-last-child(2) {
   flex:1 1 45%; max-width:100% !important; white-space:normal !important; text-overflow:clip;
 }
