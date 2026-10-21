@@ -1,0 +1,45 @@
+name: CI
+permissions:
+  contents: read
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      browser:
+        description: Run Chromium browser checks
+        type: boolean
+        default: true
+jobs:
+  unit:
+    strategy:
+      matrix:
+        node: [22, 24]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm ci --ignore-scripts --cache .npm-cache
+      - run: npm run build
+      - run: npm test
+      - run: git diff --exit-code -- lib
+      - run: npm pack --dry-run --ignore-scripts --cache .npm-cache
+  browser:
+    if: github.event_name != 'workflow_dispatch' || inputs.browser
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts --cache .npm-cache
+      - run: npm run build
+      - run: npx playwright-core install --with-deps chromium
+      - run: npm run test:browser
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: browser-results
+          path: test-results/

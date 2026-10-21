@@ -1,0 +1,19 @@
+{
+  "name": "dsh-whale-locale-ru",
+  "version": "0.1.0",
+  "description": "Standalone Russian DOM companion for separately installed Whale Widget 0.4.2",
+  "type": "module",
+  "license": "MIT",
+  "author": "pepperfm",
+  "homepage": "https://github.com/pepperfm/dsh-whale-locale-ru#readme",
+  "bugs": {"url":"https://github.com/pepperfm/dsh-whale-locale-ru/issues"},
+  "keywords": ["deepseek-harness","dsh","dsh-plugin","whale","russian","i18n"],
+  "repository": {"type":"git","url":"git+https://github.com/pepperfm/dsh-whale-locale-ru.git"},
+  "main": "lib/index.js",
+  "exports": {".":"./lib/index.js","./client":"./lib/client.js","./package.json":"./package.json"},
+  "files": ["lib","locales/whale.json","locales/whale-speech.json","cordis.patch.yml","build.mjs","whale-adapter.js","whale-layout.js","whale-text.js","README.md","LICENSE","THIRD_PARTY_NOTICES.md"],
+  "dsh": {"bundle":{"patch":"./cordis.patch.yml"},"client":{"platform":"web","inject":["@deepseek-ai/dsh-client-locale"]}},
+  "scripts": {"build":"node build.mjs","test":"node --test test/*.test.mjs","test:browser":"node test/browser.mjs && node test/sweep.mjs"},
+  "devDependencies": {"dsh-whale-widget":"0.4.2","playwright-core":"1.64.1"},
+  "engines": {"node":">=22"}
+}
